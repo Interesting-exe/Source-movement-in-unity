@@ -7,8 +7,8 @@ public class PlayerMovement : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private Transform orientation;
-    [SerializeField] private Transform groundCheck;
     [SerializeField] private LayerMask groundLayer;
+    private PhysicMaterial pm;
     
     [Header("Movement")]
     [SerializeField] private float speed = 8f;
@@ -18,17 +18,16 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float speedLimit = 30f;
     [SerializeField] private float jumpForce = 15f;
 
+    [Header("Keybindings")]
+
     private float horizontalMovement;
     private float verticalMovement;
-    private float groundDistance = 0.05f;
-    
+
     private float groundDrag = 5f;
     private float airDrag = 0.5f;
 
     public bool isGrounded;
-    private bool oldIsGrounded = true;
     public bool onSlope;
-    public bool onSurf;
     private bool canJump = true;
     private bool descendingSlope = false;
 
@@ -37,10 +36,11 @@ public class PlayerMovement : MonoBehaviour
     private Vector3 surfVector;
     
     private Rigidbody rb;
-    
+
     private void Start()
     {
         rb = GetComponent<Rigidbody>();
+        pm = GetComponent<CapsuleCollider>().material;
     }
 
     void controlDrag()
@@ -49,20 +49,24 @@ public class PlayerMovement : MonoBehaviour
             rb.drag = groundDrag;
         else
             rb.drag = airDrag;
-
     }
 
     private void Update()
     {
         MyInput();
         controlDrag();
-
+        
         if (Input.GetAxisRaw("Jump") != 0 && isGrounded)
         {
             Jump();
         }
-        
-        isGrounded = Physics.CheckSphere(groundCheck.position, groundDistance, groundLayer);
+
+        if (!isGrounded)
+        {
+            pm.staticFriction = 0f;
+            pm.dynamicFriction = 0f;
+            pm.frictionCombine = PhysicMaterialCombine.Minimum;
+        }
     }
 
     private void FixedUpdate()
@@ -79,7 +83,7 @@ public class PlayerMovement : MonoBehaviour
             rb.AddForce(transform.up * jumpForce, ForceMode.Impulse);
 
             canJump = false;
-            Invoke("resetJump", 0.05f);
+            Invoke("resetJump", 0.1f);
         }
     }
 
@@ -128,9 +132,7 @@ public class PlayerMovement : MonoBehaviour
 
         if (onSlope)
             wishdir = Vector3.ProjectOnPlane(wishdir, slopeVector);
-        else
-            rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
-        
+
         Accelerate(wishdir, wishspeed, speedLimit, acceleration);
     }
     
@@ -192,7 +194,11 @@ public class PlayerMovement : MonoBehaviour
         
         rb.velocity+=wishdir * accelspeed;
     }
-    
+
+    private bool IsFloor(Vector3 v)
+    {
+        return v == Vector3.up;
+    }
     private bool IsSlope(Vector3 v) {
         float angle = Vector3.Angle(Vector3.up, v);
         if(v != Vector3.up)
@@ -214,9 +220,13 @@ public class PlayerMovement : MonoBehaviour
         for (int i = 0; i < other.contactCount; i++)
         {
             Vector3 normal = other.contacts[i].normal;
-    
-            if (IsSlope(normal))
+
+            if (IsFloor(normal))
+                isGrounded = true;
+
+                if (IsSlope(normal))
             {
+                isGrounded = true;
                 onSlope = true;
                 slopeVector = normal;
             }
@@ -224,9 +234,26 @@ public class PlayerMovement : MonoBehaviour
                 onSlope = false;
             if (IsSurf(normal))
             {
-                onSurf = true;
                 surfVector = normal;
+                isGrounded = false;
             }
+
+            if (!IsFloor(normal) && !IsSlope(normal))
+                isGrounded = false;
+        }
+    }
+
+    private void OnCollisionEnter(Collision other)
+    {
+        int layer = other.gameObject.layer;
+        if (groundLayer != (groundLayer | (1 << layer))) return;
+
+        for (int i = 0; i < other.contactCount; i++)
+        {
+            Vector3 normal = other.contacts[i].normal;
+
+            if (IsFloor(normal) || IsSlope(normal))
+                Invoke("EnableFriction", 0.1f); // enable friction late so bunnyhopping works consistently.
         }
     }
 
@@ -241,7 +268,14 @@ public class PlayerMovement : MonoBehaviour
     private void OnCollisionExit(Collision other)
     {
         onSlope = false;
-        onSurf = false;
+        isGrounded = false;
+    }
+
+    void EnableFriction()
+    {
+        pm.staticFriction = 0.6f;
+        pm.dynamicFriction = 0.6f;
+        pm.frictionCombine = PhysicMaterialCombine.Average;
     }
 
 }
