@@ -18,9 +18,6 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float speedLimit = 30f;
     [SerializeField] private float jumpForce = 15f;
 
-    [Header("Keybindings")]
-    [SerializeField] private KeyCode jumpKey = KeyCode.Space;
-
     private float horizontalMovement;
     private float verticalMovement;
     private float groundDistance = 0.05f;
